@@ -3,6 +3,7 @@ Test cases for the multiskill rules.
 """
 
 import pytest
+
 import spacy
 
 from ojd_daps_skills.extract_skills.multiskill_rules import (
@@ -13,7 +14,10 @@ from ojd_daps_skills.extract_skills.multiskill_rules import (
 )
 
 
-@pytest.fixture
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(scope="module")
 def nlp():
     try:
         nlp = spacy.load("en_core_web_sm")
@@ -23,22 +27,22 @@ def nlp():
     return nlp
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def duplicate_object_doc(nlp):
     return nlp("using and developing machine learning models")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def duplicate_verb_doc(nlp):
     return nlp("using smartphones and apps")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def skill_mentions_doc(nlp):
     return nlp("written and oral communication skills")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def split_on_and_doc():
     return "machine learning and deep learning"
 

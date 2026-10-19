@@ -1,14 +1,13 @@
 """ojd_daps_skills."""
 
-import warnings
 from pathlib import Path
 from typing import Optional
 import importlib.resources
 
 import yaml
+import os
+from platformdirs import user_cache_path
 from spacy.tokens import Doc
-
-warnings.filterwarnings("ignore")
 
 
 def get_yaml_config(file_path: Path) -> Optional[dict]:
@@ -28,7 +27,9 @@ config = get_yaml_config(_base_config_path)
 
 bucket_name = "open-jobs-lake"
 
-PUBLIC_MODEL_FOLDER_PATH = PROJECT_DIR / "ojd_daps_skills_models"
+PUBLIC_MODEL_FOLDER_PATH = Path(
+    os.environ.get("OJD_DAPS_SKILLS_CACHE", user_cache_path("ojd_daps_skills"))
+).expanduser()
 PACKAGE_PATH = importlib.resources.files("ojd_daps_skills")
 
 

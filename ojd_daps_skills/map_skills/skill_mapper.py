@@ -1,5 +1,5 @@
 """
-SkillsMapper class to MAP extracted skills from job ads. 
+SkillsMapper class to MAP extracted skills from job ads.
 """
 
 from itertools import chain
@@ -7,11 +7,11 @@ from typing import Any, Dict, List, Tuple
 import time
 
 import numpy as np
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from spacy.tokens import Doc
 from wasabi import msg
 
-from ojd_daps_skills import setup_spacy_extensions, PACKAGE_PATH
+from ojd_daps_skills import setup_spacy_extensions, PUBLIC_MODEL_FOLDER_PATH
 from ojd_daps_skills.map_skills.skill_mapper_utils import (
     MapConfig,
     get_most_common_code,
@@ -42,17 +42,17 @@ class SkillsMapper(BaseModel):
     """
 
     config: MapConfig
-    all_skills_unique_dict: Dict[int, str] = {}
+    all_skills_unique_dict: Dict[int, str] = Field(default_factory=dict)
 
     def get_top_taxonomy_skills(
         self,
         skill_embeddings: np.ndarray,
-        taxonomy_embeddings_dict: Dict[int, np.array],
+        taxonomy_embeddings_dict: Dict[int, np.ndarray],
     ) -> Tuple[List[int], List[float]]:
         """Get the top taxonomy skills at the lowest level of the taxonomy.
         Args:
             skill_embeddings (np.ndarray): An array of skill semantic embeddings.
-            taxonomy_embeddings_dict (Dict[int, np.array]): A dictionary with
+            taxonomy_embeddings_dict (Dict[int, np.ndarray]): A dictionary with
                 integer keys and semantic embeddings as values.
 
         Returns:
@@ -79,13 +79,13 @@ class SkillsMapper(BaseModel):
     def get_top_hierarchy_skills(
         self,
         skill_embeddings: np.ndarray,
-        taxonomy_embeddings_dict: Dict[int, np.array],
+        taxonomy_embeddings_dict: Dict[int, np.ndarray],
     ) -> Dict[int, Dict[str, List[int]]]:
         """Get the top taxonomy skills at each level of the taxonomy.
 
         Args:
             skill_embeddings (np.ndarray): An array of skill semantic embeddings.
-            taxonomy_embeddings_dict (Dict[int, np.array]): A dictionary with
+            taxonomy_embeddings_dict (Dict[int, np.ndarray]): A dictionary with
                 integer keys and semantic embeddings as values.
 
         Returns:
@@ -120,18 +120,25 @@ class SkillsMapper(BaseModel):
 
     def get_embeddings(
         self, job_ads: List[Doc]
-    ) -> Tuple[np.ndarray, Dict[int, np.array]]:
+    ) -> Tuple[np.ndarray, Dict[int, np.ndarray]]:
         """Get the embeddings for all unique skills in the job ads and the taxonomy.
 
         Args:
             job_ads (List[Doc]): A list of spaCy Doc objects with skill spans.
 
         Returns:
-            Tuple[np.ndarray, Dict[int, np.array]]: A tuple of the skill embeddings
+            Tuple[np.ndarray, Dict[int, np.ndarray]]: A tuple of the skill embeddings
                 and a dictionary with taxonomy skill indices and embeddings.
         """
         all_skills = list(chain.from_iterable([doc._.skill_spans for doc in job_ads]))
-        all_skills_unique = list(set(all_skills))
+        # Deduplicate by normalized text (spaCy spans from different documents
+        # are distinct objects). Preserve order for reproducible results.
+        all_skills_unique = list(
+            dict.fromkeys(
+                clean_text(skill if isinstance(skill, str) else skill.text)
+                for skill in all_skills
+            )
+        )
 
         if not isinstance(self.config.hard_coded_taxonomy, dict):
             self.config.hard_coded_taxonomy = {}
@@ -147,8 +154,11 @@ class SkillsMapper(BaseModel):
             list(self.all_skills_unique_dict.values())
         )
 
+        if not self.all_skills_unique_dict:
+            return skill_embeddings, self.config.taxonomy_embeddings or {}
+
         if not self.config.taxonomy_embeddings:
-            msg.info(f"No taxonomy embeddings found, calculating ...")
+            msg.info("No taxonomy embeddings found, calculating ...")
             t0 = time.time()
             taxonomy_embeddings = self.config.bert_model.transform(
                 self.config.taxonomy_data[
@@ -164,8 +174,8 @@ class SkillsMapper(BaseModel):
             self.config.taxonomy_embeddings = taxonomy_embeddings_dict
             msg.info(f"Embeddings calculated in {time.time() - t0} seconds")
             # Save taxonomy embeddings for future use
-            taxonomy_embeddings_path = PACKAGE_PATH.joinpath(
-                "data",
+            taxonomy_embeddings_path = PUBLIC_MODEL_FOLDER_PATH.joinpath(
+                "taxonomies",
                 "_".join(
                     [
                         i
@@ -199,12 +209,16 @@ class SkillsMapper(BaseModel):
 
         skill_embeddings, taxonomy_embeddings_dict = self.get_embeddings(job_ads)
 
+        if not self.all_skills_unique_dict:
+            return []
+
         (
             top_skill_indxs,
             top_skill_scores,
             tax_skills_ix,
         ) = self.get_top_taxonomy_skills(skill_embeddings, taxonomy_embeddings_dict)
 
+        top_hier_skills, hier_types = {}, {}
         if self.config.taxonomy_config.get("skill_hier_info_col"):
             top_hier_skills, hier_types = self.get_top_hierarchy_skills(
                 skill_embeddings, taxonomy_embeddings_dict
@@ -251,9 +265,9 @@ class SkillsMapper(BaseModel):
                             high_hier_codes += [hier_level] * round(sim_score * 10)
                 high_tax_skills_results = {}
                 for hier_level in range(self.config.taxonomy_config["num_hier_levels"]):
-                    high_tax_skills_results[
-                        "most_common_level_" + str(hier_level)
-                    ] = get_most_common_code(high_hier_codes, hier_level)
+                    high_tax_skills_results["most_common_level_" + str(hier_level)] = (
+                        get_most_common_code(high_hier_codes, hier_level)
+                    )
 
                 if high_tax_skills_results:
                     match_results["high_tax_skills"] = high_tax_skills_results

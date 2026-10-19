@@ -70,7 +70,7 @@ def detect_camelcase(text: str) -> str:
 # load punctuation replacement rules
 punctuation_replacement_rules = {
     # old patterns: replacement pattern
-    "[\u2022\u2023\u25E6\u2043\u2219*]": ".",  # Convert bullet points to fullstops
+    "[\u2022\u2023\u25e6\u2043\u2219*]": ".",  # Convert bullet points to fullstops
     r"[/:\\]": " ",  # Convert colon and forward and backward slashes to spaces
 }
 

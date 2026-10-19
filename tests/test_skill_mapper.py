@@ -4,36 +4,40 @@ Test cases for the SkillsMapper class.
 
 import pytest
 
+
 from ojd_daps_skills.extract_skills.extract_skills_utils import ExtractConfig
 from ojd_daps_skills.map_skills.skill_mapper_utils import MapConfig
 from ojd_daps_skills.map_skills.skill_mapper import SkillsMapper
 
 
-@pytest.fixture
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(scope="module")
 def skill_mapper():
     map_config = MapConfig.create(taxonomy_name="esco")
     sm = SkillsMapper(config=map_config)
     return sm
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def extract_config():
     return ExtractConfig.create("nestauk/en_skillner", "nestauk/multiskill-classifier")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def skill_embeddings(skill_mapper):
     skills = ["Python", "Oral Communication"]
     skill_embeddings = skill_mapper.config.bert_model.transform(skills)
     return skill_embeddings
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def taxonomy_embeddings_dict(skill_mapper):
     return skill_mapper.config.taxonomy_embeddings
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def job_ads(extract_config):
     job_texts = [
         "We are hiring for a data scientist with experience in Python and machine learning.",

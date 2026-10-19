@@ -3,6 +3,7 @@ Test cases for the SkillExtractor class.
 """
 
 import pytest
+
 from spacy.tokens import Doc
 from wasabi import msg
 
@@ -12,17 +13,20 @@ from ojd_daps_skills.extract_skills.extract_skills import SkillsExtractor
 setup_spacy_extensions()
 
 
-@pytest.fixture
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(scope="module")
 def sm():
     return SkillsExtractor(taxonomy_name="toy")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def job_ad():
     return "We are looking for a data scientist with experience in Python, R, and SQL."
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def job_ads():
     return [
         "We are looking for a data scientist with experience in Python, R, and SQL.",
@@ -30,7 +34,7 @@ def job_ads():
     ]
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def job_doc(sm):
     doc = sm.extract_config.nlp(
         "We are looking for a data scientist with experience in Python, R, and SQL."
@@ -39,7 +43,7 @@ def job_doc(sm):
     return doc
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def job_docs(sm):
     docs = [
         sm.extract_config.nlp(

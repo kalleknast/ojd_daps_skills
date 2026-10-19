@@ -1,19 +1,18 @@
 """
-Utility functions and a configuration manager for 
+Utility functions and a configuration manager for
 extracting skills from job descriptions.
 """
 
-import os
 from typing import List, Optional
 
 import joblib
 import spacy
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
-from skops.hub_utils import download
+from huggingface_hub import hf_hub_download, snapshot_download
+from huggingface_hub.errors import HfHubHTTPError
 from spacy.language import Language
-from wasabi import msg
 
 from ojd_daps_skills import PUBLIC_MODEL_FOLDER_PATH
 
@@ -72,14 +71,13 @@ class ExtractConfig(BaseModel):
     nlp: Optional[Language] = None  # Optional, since it's set during creation
     ms_model: Optional[Pipeline] = None  # Optional for the same reason
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @classmethod
     def create(
         cls,
-        ner_model_name: Optional[str] = ner_model_name,
-        ms_model_name: Optional[str] = ms_model_name,
+        ner_model_name: str = "nestauk/en_skillner",
+        ms_model_name: str = "nestauk/multiskill-classifier",
     ) -> "ExtractConfig":
         """
         Creates an instance of ExtractConfig by loading configurations.
@@ -94,41 +92,65 @@ class ExtractConfig(BaseModel):
             ExtractConfig: An initialized instance of this configuration class.
 
         Raises:
-            msg.fail: If the models are not loaded locally, this error is raised.
-            OSError: If the NER model is not loaded, this error is raised.
+            OSError: A local spaCy model cannot be loaded.
+            RuntimeError: A remote NER model cannot be downloaded or loaded.
+            ValueError: A model identifier is invalid.
         """
-        if "/" in ner_model_name:
-            namespace, ner_name = ner_model_name.split("/")
-        else:
-            msg.fail(
-                f"Invalid NER model name: {ner_model_name}. Must include HuggingFace namespace and model name.",
-                exit=1,
+        if not isinstance(ner_model_name, str) or not ner_model_name.strip():
+            raise ValueError(
+                "ner_model_name must be a spaCy model, path, or Hub repository ID."
             )
-        try:
-            nlp = spacy.load(ner_name)
+        if not isinstance(ms_model_name, str) or "/" not in ms_model_name:
+            raise ValueError(
+                "ms_model_name must be a Hugging Face namespace/repository ID."
+            )
 
-        except OSError:
-            if ner_model_name == "nestauk/en_skillner":
-                msg.info(f"{ner_model_name} NER model not loaded. Downloading model...")
-                os.system(
-                    f'pip install "{ner_name} @ https://huggingface.co/{namespace}/{ner_name}/resolve/main/{ner_name}-any-py3-none-any.whl"'
-                )
-                msg.info("Model downloaded")
-                nlp = spacy.load(ner_name)
-            else:
-                msg.fail(
-                    f"{ner_model_name} NER model not loaded: {ner_model_name} Please install accordingly.",
-                    exit=1,
-                )
-
-        # Load multi-skill model
-        ms_model_path = PUBLIC_MODEL_FOLDER_PATH / "ms_model"
+        # Use an installed model or local directory if supplied. Never run pip
+        # inside a library call: load the published spaCy files directly instead.
+        installed_name = (
+            "en_skillner" if ner_model_name == "nestauk/en_skillner" else ner_model_name
+        )
         try:
-            clf = joblib.load(ms_model_path / "multiskill-classifiert4_v38_0.pkl")
-        except Exception:
-            msg.fail("Multi-skill classifier not loaded. Downloading model...")
-            download(repo_id=ms_model_name, dst=ms_model_path)
-            clf = joblib.load(ms_model_path / "multiskill-classifiert4_v38_0.pkl")
+            nlp = spacy.load(installed_name)
+        except OSError as error:
+            if "/" not in ner_model_name or ner_model_name.startswith(("/", ".")):
+                raise OSError(
+                    f"spaCy model or directory not found: {ner_model_name}"
+                ) from error
+            try:
+                model_path = snapshot_download(
+                    repo_id=ner_model_name,
+                    cache_dir=PUBLIC_MODEL_FOLDER_PATH / "hub",
+                    allow_patterns=[
+                        "config.cfg",
+                        "meta.json",
+                        "tokenizer",
+                        "attribute_ruler/*",
+                        "lemmatizer/*",
+                        "ner/*",
+                        "parser/*",
+                        "senter/*",
+                        "tagger/*",
+                        "tok2vec/*",
+                        "vocab/*",
+                    ],
+                )
+                nlp = spacy.load(model_path)
+            except (OSError, HfHubHTTPError) as error:
+                raise RuntimeError(
+                    f"Could not load NER model {ner_model_name!r}. The first use requires "
+                    "access to huggingface.co and its download hosts; subsequent offline "
+                    "runs can use the cache with HF_HUB_OFFLINE=1."
+                ) from error
+
+        # joblib deserializes a trusted Nesta classifier. Custom model repositories
+        # must also be trusted. Cache by repo/revision so models cannot collide.
+        model_file = hf_hub_download(
+            repo_id=ms_model_name,
+            filename="multiskill-classifiert4_v38_0.pkl",
+            cache_dir=PUBLIC_MODEL_FOLDER_PATH / "hub",
+        )
+        clf = joblib.load(model_file)
 
         ms_model = Pipeline(
             [("transformer", MultiSkillTransformer()), ("classifier", clf)]

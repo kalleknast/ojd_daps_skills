@@ -1,7 +1,10 @@
 import time
 
+import numpy as np
+
 from sentence_transformers import SentenceTransformer
 from wasabi import msg
+from ojd_daps_skills import PUBLIC_MODEL_FOLDER_PATH
 
 
 class BertVectorizer:
@@ -26,20 +29,28 @@ class BertVectorizer:
         self.batch_size = batch_size
 
     def fit(self, *_):
-        self.bert_model = SentenceTransformer(self.bert_model_name, device="cpu")
+        self.bert_model = SentenceTransformer(
+            self.bert_model_name,
+            device="cpu",
+            cache_folder=str(PUBLIC_MODEL_FOLDER_PATH / "hub"),
+        )
         self.bert_model.max_seq_length = 512
         return self
 
     def transform(self, texts):
+        if not texts:
+            return np.empty((0, self.bert_model.get_sentence_embedding_dimension()))
         msg.info(f"Getting embeddings for {len(texts)} texts ...")
         t0 = time.time()
         if self.multi_process:
             msg.info(".. with multiprocessing")
             pool = self.bert_model.start_multi_process_pool()
-            self.embedded_x = self.bert_model.encode_multi_process(
-                texts, pool, batch_size=self.batch_size
-            )
-            self.bert_model.stop_multi_process_pool(pool)
+            try:
+                self.embedded_x = self.bert_model.encode_multi_process(
+                    texts, pool, batch_size=self.batch_size
+                )
+            finally:
+                self.bert_model.stop_multi_process_pool(pool)
         else:
             self.embedded_x = self.bert_model.encode(texts, batch_size=self.batch_size)
         msg.info(f"Took {time.time() - t0} seconds")
