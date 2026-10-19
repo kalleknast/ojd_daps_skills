@@ -76,7 +76,7 @@ def predict(nlp, texts):
         {
             "tokens": len(doc),
             "entities": [
-                (ent.start_char, ent.end_char, ent.label_) for ent in doc.ents
+                [ent.start_char, ent.end_char, ent.label_] for ent in doc.ents
             ],
         }
         for doc in nlp.pipe(texts, batch_size=16)
@@ -189,6 +189,7 @@ def main():
                 f"  3.8: {results[index]['entities']}",
                 flush=True,
             )
+        assert not differences, "The spaCy 3.8 model changed entity predictions."
         for label in ("skill", "experience"):
             delta = report[label]["f1"] - original[label]["f1"]
             print(f"{label} F1 change: {delta:+.5f}", flush=True)
