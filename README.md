@@ -12,6 +12,9 @@ The published Nesta NER model was trained with spaCy 3.7 and requires NumPy 1.x.
 Python 3.13/3.14 and NumPy 2 are not supported by this release. Removing these
 bounds requires validating or migrating the model, not simply changing pins.
 
+On Windows, Torch is constrained below 2.9 to avoid DLL initialization failures
+seen with newer wheels in this stack. Linux and macOS allow newer Torch 2 releases.
+
 CPU inference is supported; a GPU is not required. The first extraction downloads
 several hundred MB of model data and needs internet access. Later runs reuse a
 user cache. No Hugging Face token is required for the public Nesta models.
