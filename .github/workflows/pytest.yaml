@@ -71,7 +71,7 @@ jobs:
           python -m pip install . "pytest>=8,<9"
           python -m pip check
       - name: Run pretrained model tests
-        run: python -m pytest tests/test_live_models.py tests/test_config.py tests/test_skill_extractor.py -q
+        run: python -m pytest -m integration -q
       - name: Verify cached models work offline
         env:
           HF_HUB_OFFLINE: "1"
