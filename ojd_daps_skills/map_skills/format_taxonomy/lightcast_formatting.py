@@ -9,7 +9,7 @@ description: The skill/hierarchy level description texts
 type: What column name the skill/hier description is from (category, subcategory)
 hierarchy_levels: If a skill then which hierarchy levels is it in
 
-To run the script, 
+To run the script,
     python ojd_daps_skills/pipeline/skill_ner_mapping/lightcast_formatting.py --client-id CLIENT_ID --client-secret CLIENT_SECRET
 """
 

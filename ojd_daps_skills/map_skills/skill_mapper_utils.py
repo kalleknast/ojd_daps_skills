@@ -1,9 +1,10 @@
 """
 Utility functions to map extracted skills from NER model to
-taxonomy skills and configuration managers for mapping skills. 
+taxonomy skills and configuration managers for mapping skills.
 """
 
 import ast
+import warnings
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -11,16 +12,17 @@ import numpy as np
 import pandas as pd
 import srsly
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sklearn.metrics.pairwise import cosine_similarity
 from wasabi import msg
 from huggingface_hub import hf_hub_download
+from huggingface_hub.errors import HfHubHTTPError
 
-from ojd_daps_skills import PROJECT_DIR, PACKAGE_PATH
+from ojd_daps_skills import PACKAGE_PATH, PUBLIC_MODEL_FOLDER_PATH
 from ojd_daps_skills.utils.bert_vectorizer import BertVectorizer
 
 
-def get_top_comparisons(ojo_embs: np.array, taxonomy_embs: np.array) -> Tuple[list]:
+def get_top_comparisons(ojo_embs: np.ndarray, taxonomy_embs: np.ndarray) -> Tuple[list]:
     """Get the top 10 most similar taxonomy skills for each extracted skill.
 
     Args:
@@ -42,7 +44,6 @@ def get_top_comparisons(ojo_embs: np.array, taxonomy_embs: np.array) -> Tuple[li
         return top_sim_indxs, top_sim_scores
 
     else:
-
         return None, None
 
 
@@ -68,7 +69,7 @@ def get_most_common_code(
     if any([isinstance(el, str) for el in split_possible_codes]):
         split_possible_codes = [split_possible_codes]
 
-    lev_codes = [w[lev_n] for w in split_possible_codes if w[lev_n]]
+    lev_codes = [w[lev_n] for w in split_possible_codes if len(w) > lev_n and w[lev_n]]
     if lev_codes:
         lev_code, lev_num = Counter(lev_codes).most_common(1)[0]
         lev_prop = (
@@ -152,7 +153,7 @@ class MapConfig(BaseModel):
             calculate similarity scores between extracted skills and taxonomy skills.
         taxonomy_data (pd.DataFrame): The taxonomy data to use for mapping skills. This
             includes the skill names, skill descriptions, and hierarchical information.
-        taxonomy_embeddings (Optional[Dict[int, np.array]]): The embeddings of the taxonomy
+        taxonomy_embeddings (Optional[Dict[int, np.ndarray]]): The embeddings of the taxonomy
             data. This is used to calculate similarity scores between extracted skills and
             taxonomy skills.
         hier_mapper (Dict[str, str]): A dictionary mapping the hierarchical information of
@@ -171,13 +172,12 @@ class MapConfig(BaseModel):
     taxonomy_config: Optional[Dict[str, Any]] = None
     bert_model: Optional[BertVectorizer] = None
     taxonomy_data: Optional[pd.DataFrame] = None
-    taxonomy_embeddings: Optional[Dict[int, np.array]] = None
+    taxonomy_embeddings: Optional[Dict[int, np.ndarray]] = None
     hier_mapper: Optional[Dict[str, str]] = None
     hard_coded_taxonomy: Optional[Dict[int, Any]] = None
     previous_skill_matches: Optional[Dict[int, Any]] = None
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @classmethod
     def create(cls, taxonomy_name: Optional[str] = "toy") -> "MapConfig":
@@ -192,15 +192,17 @@ class MapConfig(BaseModel):
             MapConfig: An initialized instance of this configuration class.
 
         Raises:
-            msg.fail: If the configuration file or data is not loaded locally, this error
-                is raised.
+            ValueError: The taxonomy name is unsupported.
+            FileNotFoundError: The installed package is missing required data.
         """
-        config_path = PROJECT_DIR / "ojd_daps_skills/configs"
+        if taxonomy_name not in {"toy", "esco", "lightcast"}:
+            raise ValueError("taxonomy_name must be 'toy', 'esco', or 'lightcast'.")
+        config_path = PACKAGE_PATH / "configs"
         config_file = config_path / f"extract_skills_{taxonomy_name}.yaml"
 
         # Load configuration file
         if not config_file.exists():
-            raise msg.fail(f"Configuration file not found: {config_file}", exits=1)
+            raise FileNotFoundError(f"Configuration file not found: {config_file}")
 
         with open(config_file, "r") as file:
             config_data = yaml.safe_load(file)
@@ -235,7 +237,7 @@ class MapConfig(BaseModel):
                 ].apply(_clean_string_list)
 
         else:
-            raise msg.fail(f"Taxonomy data not found: {taxonomy_data_path}", exits=1)
+            raise FileNotFoundError(f"Taxonomy data not found: {taxonomy_data_path}")
 
         taxonomy_embeddings_file_name = "_".join(
             [i for i in [taxonomy_name, taxonomy_version, "embeddings.json"] if i]
@@ -245,6 +247,11 @@ class MapConfig(BaseModel):
             taxonomy_embeddings_file_name,
         )
 
+        cached_embeddings = (
+            PUBLIC_MODEL_FOLDER_PATH / "taxonomies" / taxonomy_embeddings_file_name
+        )
+        if cached_embeddings.exists():
+            taxonomy_embeddings_path = cached_embeddings
         if taxonomy_embeddings_path.exists():
             taxonomy_embeddings = load_taxonomy_embeddings_local(
                 taxonomy_embeddings_path
@@ -252,18 +259,22 @@ class MapConfig(BaseModel):
         else:
             try:
                 msg.info("Downloading taxonomy embeddings from HuggingFace")
-                hf_hub_download(
+                taxonomy_embeddings_path = hf_hub_download(
                     repo_id="nestauk/skills_taxonomy_embeddings",
                     filename=taxonomy_embeddings_file_name,
                     repo_type="dataset",
-                    local_dir=PACKAGE_PATH.joinpath("data"),
+                    cache_dir=PUBLIC_MODEL_FOLDER_PATH / "hub",
                 )
                 taxonomy_embeddings = load_taxonomy_embeddings_local(
                     taxonomy_embeddings_path
                 )
-            except:
-                msg.info(
-                    "Taxonomy embeddings could not be downloaded from HuggingFace, will be calculated when needed."
+            except (OSError, HfHubHTTPError) as error:
+                warnings.warn(
+                    f"Could not download {taxonomy_embeddings_file_name}: {error}. "
+                    "Taxonomy embeddings will be calculated locally and cached; "
+                    "this can take several minutes on CPU.",
+                    RuntimeWarning,
+                    stacklevel=2,
                 )
                 taxonomy_embeddings = None
 
@@ -276,7 +287,9 @@ class MapConfig(BaseModel):
         if hier_mapper_path.exists():
             hier_mapper = srsly.read_json(hier_mapper_path)
         else:
-            msg.fail(f"Hierarchical mapper not found: {hier_mapper_path}", exits=1)
+            raise FileNotFoundError(
+                f"Hierarchical mapper not found: {hier_mapper_path}"
+            )
         # here, let's download the hard-coded taxonomy if it's for escoe
         if taxonomy_name == "esco":
             hard_coded_taxonomy = srsly.read_json(

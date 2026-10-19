@@ -1,5 +1,5 @@
 """
-Phrase splitting rules for multi-skill phrases. 
+Phrase splitting rules for multi-skill phrases.
 """
 
 import re
@@ -70,7 +70,7 @@ def _split_on_and(text: str) -> List[str]:
     """
 
     # Get rid of any double spacing
-    text = re.sub("\s\s+", " ", text)
+    text = re.sub(r"\s\s+", " ", text)
     split_on = " and "
     # Normalize combinations of 'and' with commas or semicolons.
     text = text.replace(";", ",")

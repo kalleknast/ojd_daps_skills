@@ -2,7 +2,6 @@ from typing import List, Optional, Union
 
 from pydantic import BaseModel
 from spacy.tokens import Doc
-from wasabi import msg
 
 from ojd_daps_skills import setup_spacy_extensions
 from ojd_daps_skills.extract_skills.extract_skills_utils import ExtractConfig
@@ -37,11 +36,14 @@ class SkillsExtractor(BaseModel):
 
     def __init__(self, **data):
         super().__init__(**data)
-        self.map_config = MapConfig.create(taxonomy_name=self.taxonomy_name)
-        self.extract_config = ExtractConfig.create(
-            ner_model_name=self.ner_model_name, ms_model_name=self.ms_model_name
-        )
-        self.skill_mapper = SkillsMapper(config=self.map_config)
+        if self.map_config is None:
+            self.map_config = MapConfig.create(taxonomy_name=self.taxonomy_name)
+        if self.extract_config is None:
+            self.extract_config = ExtractConfig.create(
+                ner_model_name=self.ner_model_name, ms_model_name=self.ms_model_name
+            )
+        if self.skill_mapper is None:
+            self.skill_mapper = SkillsMapper(config=self.map_config)
 
     def extract_skills(self, job_ads: Union[str, List[str]]) -> List[Doc]:
         """Return a list of spaCy Doc objects with entities
@@ -64,9 +66,8 @@ class SkillsExtractor(BaseModel):
         elif not isinstance(job_ads, list) or not all(
             isinstance(ad, str) for ad in job_ads
         ):
-            raise msg.fail(
+            raise TypeError(
                 "Input must be a string or a list of strings containing job ad texts.",
-                exits=1,
             )
 
         return [self.get_skills(job_ad) for job_ad in job_ads]
@@ -83,6 +84,8 @@ class SkillsExtractor(BaseModel):
         Returns:
             Doc: spaCy Doc object with split 'SKILL' spans.
         """
+        if not isinstance(job_ad, str):
+            raise TypeError("job_ad must be a string.")
         rules = [_split_duplicate_object, _split_duplicate_verb, _split_skill_mentions]
 
         job_ad_clean = clean_text(job_ad)
@@ -139,9 +142,8 @@ class SkillsExtractor(BaseModel):
         elif not isinstance(job_ads, list) or not all(
             isinstance(doc, Doc) for doc in job_ads
         ):
-            raise msg.fail(
+            raise TypeError(
                 "Input must be a spaCy Doc object or a list of spaCy Doc objects with ._.skill_spans attribute.",
-                exits=1,
             )
 
         all_mapped_skills = self.skill_mapper.match_skills(job_ads)
@@ -151,7 +153,7 @@ class SkillsExtractor(BaseModel):
             for skill_span in job_ad._.skill_spans:
                 if not isinstance(skill_span, str):
                     skill_span = skill_span.text
-                skill_hash = short_hash(skill_span)
+                skill_hash = short_hash(clean_text(skill_span))
                 if all_mapped_skills:
                     mapped_skills_list.append(all_mapped_skills.get(skill_hash))
                 else:

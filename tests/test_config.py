@@ -3,6 +3,7 @@ Test cases for configuration managers.
 """
 
 import pytest
+
 from sklearn.pipeline import Pipeline
 
 from ojd_daps_skills import PUBLIC_MODEL_FOLDER_PATH
@@ -10,12 +11,15 @@ from ojd_daps_skills.extract_skills.extract_skills_utils import ExtractConfig
 from ojd_daps_skills.map_skills.skill_mapper_utils import MapConfig
 
 
-@pytest.fixture
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(scope="module")
 def extract_config():
     return ExtractConfig.create("nestauk/en_skillner", "nestauk/multiskill-classifier")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def map_config():
     return MapConfig.create("esco")
 
@@ -27,6 +31,6 @@ def test_extract_config(extract_config):
 
     # assert that there is a multiskill-classifier saved locally
     assert PUBLIC_MODEL_FOLDER_PATH.exists()
-    ms_model_path = PUBLIC_MODEL_FOLDER_PATH / "ms_model"
+    ms_model_path = PUBLIC_MODEL_FOLDER_PATH / "hub"
 
     assert ms_model_path.exists()

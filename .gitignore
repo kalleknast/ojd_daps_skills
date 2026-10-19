@@ -132,3 +132,7 @@ target/
 
 # NPM
 node_modules/
+# Local validation environments and caches
+.venv/
+.model-cache/
+.ruff_cache/

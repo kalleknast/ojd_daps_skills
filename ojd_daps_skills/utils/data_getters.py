@@ -1,10 +1,12 @@
 import gzip
 import json
 import pickle
+import os
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from decimal import Decimal
 from fnmatch import fnmatch
 
-import boto3
 import numpy
 import pandas as pd
 from pandas import DataFrame
@@ -34,11 +36,11 @@ def load_data(file_name: str, local=True) -> DataFrame:
             file (pd.DataFrame): Loaded Data in pd.DataFrame
     """
     if local:
-        if fnmatch(file_name, "*.csv"):
+        if fnmatch(str(file_name), "*.csv"):
             return pd.read_csv(file_name)
         else:
-            msg.fail(
-                f'{file_name} has wrong file extension! Only supports "*.csv"', exit=1
+            raise ValueError(
+                f'{file_name} has wrong file extension! Only supports "*.csv"'
             )
 
 
@@ -49,12 +51,12 @@ def load_json_dict(file_name: str) -> dict:
     Returns:
             file (dict): Loaded dict
     """
-    if fnmatch(file_name, "*.json"):
+    if fnmatch(str(file_name), "*.json"):
         with open(file_name, "r") as file:
             return json.load(file)
     else:
-        msg.fail(
-            f'{file_name} has wrong file extension! Only supports "*.json"', exit=1
+        raise ValueError(
+            f'{file_name} has wrong file extension! Only supports "*.json"'
         )
 
 
@@ -65,28 +67,41 @@ def save_json_dict(dictionary: dict, file_name: str):
             dictionary (dict): The dictionary to be saved
             file_name (str): Local path to json.
     """
-    if fnmatch(file_name, "*.json"):
-        with open(file_name, "w") as file:
-            json.dump(dictionary, file)
-    else:
-        msg.fail(
-            f'{file_name} has wrong file extension! Only supports "*.json"', exit=1
-        )
+    path = Path(file_name)
+    if path.suffix != ".json":
+        raise ValueError(f"{path} has wrong file extension; expected .json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Replace atomically so interrupted writes cannot poison the embedding cache.
+    temporary = None
+    try:
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, delete=False
+        ) as file:
+            temporary = Path(file.name)
+            json.dump(dictionary, file, cls=CustomJsonEncoder)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def load_txt_lines(file_name: str) -> list:
     txt_list = []
-    if fnmatch(file_name, "*.txt"):
+    if fnmatch(str(file_name), "*.txt"):
         with open(file_name) as file:
             for line in file:
                 txt_list.append(line.rstrip())
     else:
-        msg.fail(f'{file_name} has wrong file extension! Only supports "*.txt"', exit=1)
+        raise ValueError(f'{file_name} has wrong file extension! Only supports "*.txt"')
 
     return txt_list
 
 
 def get_s3_resource():
+    try:
+        import boto3
+    except ImportError as error:
+        raise ImportError("Install ojd-daps-skills[s3] to use S3 helpers.") from error
     s3 = boto3.resource("s3")
     return s3
 
@@ -128,7 +143,7 @@ def load_prodigy_jsonl_s3_data(s3, bucket_name, file_name):
     file_name: S3 key to load
     """
     obj = s3.Object(bucket_name, file_name)
-    if fnmatch(file_name, "*.jsonl"):
+    if fnmatch(str(file_name), "*.jsonl"):
         file = obj.get()["Body"].read().decode()
         return [json.loads(str(item)) for item in file.strip().split("\n")]
 
@@ -142,27 +157,26 @@ def load_s3_data(s3, bucket_name, file_name):
     file_name: S3 key to load
     """
     obj = s3.Object(bucket_name, file_name)
-    if fnmatch(file_name, "*.jsonl.gz"):
+    if fnmatch(str(file_name), "*.jsonl.gz"):
         with gzip.GzipFile(fileobj=obj.get()["Body"]) as file:
             return [json.loads(line) for line in file]
-    elif fnmatch(file_name, "*.jsonl"):
+    elif fnmatch(str(file_name), "*.jsonl"):
         file = obj.get()["Body"].read().decode()
         return [json.loads(line) for line in file]
-    elif fnmatch(file_name, "*.json.gz"):
+    elif fnmatch(str(file_name), "*.json.gz"):
         with gzip.GzipFile(fileobj=obj.get()["Body"]) as file:
             return json.load(file)
-    elif fnmatch(file_name, "*.json"):
+    elif fnmatch(str(file_name), "*.json"):
         file = obj.get()["Body"].read().decode()
         return json.loads(file)
-    elif fnmatch(file_name, "*.csv"):
+    elif fnmatch(str(file_name), "*.csv"):
         return pd.read_csv("s3://" + bucket_name + "/" + file_name)
-    elif fnmatch(file_name, "*.pkl") or fnmatch(file_name, "*.pickle"):
-        file = obj.get()["Body"].read().decode()
+    elif fnmatch(str(file_name), "*.pkl") or fnmatch(str(file_name), "*.pickle"):
+        file = obj.get()["Body"].read()
         return pickle.loads(file)
     else:
-        msg.fail(
+        raise ValueError(
             'Function not supported for file type other than "*.csv", "*.jsonl.gz", "*.jsonl", or "*.json"',
-            exit=1,
         )
 
 
