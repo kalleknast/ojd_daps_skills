@@ -7,10 +7,15 @@ skill phrases from job advertisements and maps them to the **toy**, **ESCO**, or
 
 ## Requirements
 
-Use **Python 3.10, 3.11, or 3.12**, preferably in a fresh virtual environment.
-The published Nesta NER model was trained with spaCy 3.7 and requires NumPy 1.x.
-Python 3.13/3.14 and NumPy 2 are not supported by this release. Removing these
-bounds requires validating or migrating the model, not simply changing pins.
+Use **Python 3.10–3.13**, preferably in a fresh virtual environment. The
+published Nesta NER model was trained with spaCy 3.7. Its entity predictions
+were identical under spaCy 3.8.16 on the tutorial's 336-sentence evaluation
+set, including after saving and reloading the model. It emits spaCy's model
+compatibility warning because Nesta's published metadata still lists 3.7.
+NumPy 2 is supported. Python 3.14 has not been validated. The upstream
+multiskill classifier was serialized with scikit-learn 1.3 and emits a version
+warning under the compatible 1.6 dependency; the live extraction tests pass,
+but the warning is left visible.
 
 On Windows, Torch is constrained below 2.9 to avoid DLL initialization failures
 seen with newer wheels in this stack. Linux and macOS allow newer Torch 2 releases.
@@ -22,7 +27,7 @@ user cache. No Hugging Face token is required for the public Nesta models.
 ## Install this fork
 
 ```bash
-python3.12 -m venv .venv
+python3.13 -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
 python -m pip install "git+https://github.com/kalleknast/ojd_daps_skills.git@dev"
@@ -34,19 +39,17 @@ replace `dev` in the Git URL with the tested commit SHA.
 
 ### Google Colab
 
-Select **Runtime → Change runtime type → Python 3 → CPU → 2026.07**
-(Python 3.12.13), or another available Python 3.10–3.12 runtime.
-Then run:
+Use Colab's **current Python 3 runtime** with **CPU** hardware. There is no
+need to select an older runtime. Then run:
 
 ```python
 %pip install "git+https://github.com/kalleknast/ojd_daps_skills.git@dev" nervaluate==1.2.1
 ```
 
 **Restart the session after installation**, then continue with the imports below.
-Colab may preload NumPy 2: pip changes its installed files, but already imported
-modules remain in memory until restart. Skipping the restart can produce errors
-such as `No module named 'numpy.rec'`. Do not rerun the installation cell after
-restarting. No manual edits to dependency files or model wheels are needed.
+Colab may have already loaded libraries that pip updates; restarting replaces
+those in-memory copies. No manual dependency edits or runtime downgrade are
+needed.
 
 ## Extract and map skills
 
