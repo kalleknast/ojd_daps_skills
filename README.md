@@ -12,7 +12,10 @@ published Nesta NER model was trained with spaCy 3.7. Its entity predictions
 were identical under spaCy 3.8.16 on the tutorial's 336-sentence evaluation
 set, including after saving and reloading the model. It emits spaCy's model
 compatibility warning because Nesta's published metadata still lists 3.7.
-NumPy 2 is supported. Python 3.14 has not been validated.
+NumPy 2 is supported. Python 3.14 has not been validated. The upstream
+multiskill classifier was serialized with scikit-learn 1.3 and emits a version
+warning under the compatible 1.6 dependency; the live extraction tests pass,
+but the warning is left visible.
 
 On Windows, Torch is constrained below 2.9 to avoid DLL initialization failures
 seen with newer wheels in this stack. Linux and macOS allow newer Torch 2 releases.
