@@ -1,0 +1,50 @@
+name: Probe spaCy 3.8 model compatibility
+
+on:
+  push:
+    branches: [probe/spacy38]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download the tutorial's public test set
+        shell: bash
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/acp19tag/skill-extraction-dataset/ca1eadd2885a277853b01f0ec96fc89094adf71e/preprocessed_data/df_testset.csv -o "$RUNNER_TEMP/df_testset.csv"
+          echo 'ff69bff0202fda1f4d244fb5d8248fdea364ddbcf6e7217d989cc072b3f49201  '"$RUNNER_TEMP/df_testset.csv" | sha256sum -c -
+      - name: Install separate spaCy environments
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/spacy37"
+          python -m venv "$RUNNER_TEMP/spacy38"
+          "$RUNNER_TEMP/spacy37/bin/python" -m pip install 'spacy==3.7.5' 'numpy==1.26.4' 'huggingface-hub==0.36.2' 'toolz>=0.12,<2' 'pyyaml>=6,<7' 'platformdirs>=4,<5'
+          "$RUNNER_TEMP/spacy38/bin/python" -m pip install 'spacy==3.8.16' 'numpy==1.26.4' 'huggingface-hub==0.36.2' 'toolz>=0.12,<2' 'pyyaml>=6,<7' 'platformdirs>=4,<5'
+          "$RUNNER_TEMP/spacy37/bin/python" -m pip check
+          "$RUNNER_TEMP/spacy38/bin/python" -m pip check
+      - name: Run the original model on spaCy 3.7
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/spacy37/bin/python" tests/spacy_compat_probe.py --data "$RUNNER_TEMP/df_testset.csv" --cache "$RUNNER_TEMP/model-cache" --output "$RUNNER_TEMP/spacy37-results.json"
+      - name: Run and reserialize the original model on spaCy 3.8
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/spacy38/bin/python" tests/spacy_compat_probe.py --data "$RUNNER_TEMP/df_testset.csv" --cache "$RUNNER_TEMP/model-cache" --baseline "$RUNNER_TEMP/spacy37-results.json" --output "$RUNNER_TEMP/spacy38-results.json" --resave "$RUNNER_TEMP/resaved-model"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spacy-compat-results
+          path: |
+            ${{ runner.temp }}/spacy37-results.json
+            ${{ runner.temp }}/spacy38-results.json
